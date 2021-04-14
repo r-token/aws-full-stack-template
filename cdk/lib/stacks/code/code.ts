@@ -9,12 +9,7 @@ import { S3Stack } from '../s3/s3';
 import { ApiGatewayStack } from '../apigateway/apigateway';
 
 export interface CodeStackProps extends cdk.StackProps {
-    projectName: string,
-    codeBuildRoleName: string,
-    codePipelineRoleName: string,
-    pipelineProjectName: string,
-    pipelineProjectDescription: string,
-    pipelineProjectBuildSpec: string
+    projectName: string
 }
 
 export class CodeStack extends Stack {
@@ -25,7 +20,7 @@ export class CodeStack extends Stack {
         /* CodeBuild Roles/Policies */
         //#region 
         const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
-            roleName: props.codeBuildRoleName,
+            roleName: 'CodeBuildRole',
             assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
         });
 
@@ -47,7 +42,7 @@ export class CodeStack extends Stack {
         }));
 
         const codePipelineRole = new iam.Role(this, 'CodePipelineRole', {
-            roleName: props.codePipelineRoleName,
+            roleName: 'CodePipelineRole',
             assumedBy: new iam.ServicePrincipal('codepipeline.amazonaws.com')
         });
 
@@ -67,8 +62,8 @@ export class CodeStack extends Stack {
         /* CodeBuild Pipeline Project */
         //#region 
         const codeBuildProject = new codebuild.PipelineProject(this, 'CodeBuildProject', {
-            projectName: props.pipelineProjectName,
-            description: props.pipelineProjectDescription,
+            projectName: `${props.projectName}-build`,
+            description: `CodeBuild Project for ${props.projectName}.`,
             environment: {
                 computeType: codebuild.ComputeType.SMALL,
                 buildImage: codebuild.LinuxBuildImage.STANDARD_3_0,
@@ -83,7 +78,7 @@ export class CodeStack extends Stack {
                 }
             },
             role: codeBuildRole,
-            buildSpec: codebuild.BuildSpec.fromSourceFilename(props.pipelineProjectBuildSpec),
+            buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec.yml'),
             timeout: cdk.Duration.minutes(5),
         });
         cdk.Tag.add(codeBuildProject, 'app-name', `${props.projectName}`);

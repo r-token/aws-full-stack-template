@@ -6,9 +6,7 @@ import { LambdaStack } from '../lambda/lambda';
 import { CognitoStack } from '../cognito/cognito';
 
 export interface ApiGatewayStackProps extends cdk.StackProps {
-    projectName: string,
-    apiName: string,
-    authorizorName: string
+    projectName: string
 }
 
 export class ApiGatewayStack extends Stack {
@@ -21,12 +19,12 @@ export class ApiGatewayStack extends Stack {
         /* Api Gateway */
         //#region
         this.appApi = new RestApi(this, 'AppApi', {
-            restApiName: props.apiName,
+            restApiName: props.projectName,
         });
 
         const authorizer = new CfnAuthorizer(this, 'ApiAuthorizer', {
             restApiId: this.appApi.restApiId,
-            name: props.authorizorName,
+            name: 'ApiAuthorizer',
             type: 'COGNITO_USER_POOLS',
             identitySource: 'method.request.header.Authorization',
             providerArns: [cognitoAppStack.userPool.userPoolArn]
@@ -35,7 +33,7 @@ export class ApiGatewayStack extends Stack {
 
         this.appApi.root.addMethod('ANY');
 
-        const items = this.appApi.root.addResource('api');
+        const items = this.appApi.root.addResource('goals');
         const getAllIntegration = new LambdaIntegration(lambdaAppStack.functionListGoals);
         items.addMethod('GET', getAllIntegration, {
             authorizationType: AuthorizationType.IAM,
@@ -69,11 +67,8 @@ export class ApiGatewayStack extends Stack {
         });
         addCorsOptions(singleItem);
 
-
         //#endregion
 
-        /* Outputs */
-        new cdk.CfnOutput(this, 'ApiGatewayUrl', { value: this.appApi.url });
 
     }
 }

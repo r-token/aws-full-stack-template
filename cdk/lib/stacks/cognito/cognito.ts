@@ -5,10 +5,7 @@ import cognito = require('@aws-cdk/aws-cognito');
 import { UserPool, UserPoolClientIdentityProvider, CfnIdentityPool } from '@aws-cdk/aws-cognito';
 
 export interface CognitoStackProps extends cdk.StackProps {
-    projectName: string,
-    userPoolName: string,
-    userPoolClientName: string,
-    identityPoolName: string
+    projectName: string
 }
 
 export class CognitoStack extends Stack {
@@ -41,7 +38,7 @@ export class CognitoStack extends Stack {
 
         /* Cognito User Pool */
         this.userPool = new UserPool(this, 'UserPool', {
-            userPoolName: props.userPoolName,
+            userPoolName: `${props.projectName}-UserPool`,
             selfSignUpEnabled: true,
             signInAliases: { email: true },
             standardAttributes: {
@@ -68,14 +65,14 @@ export class CognitoStack extends Stack {
 
         // /* User Pool Client */
         this.userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
-            userPoolClientName: props.userPoolClientName,
+            userPoolClientName: `${props.projectName}-UserPoolClient`,
             generateSecret: false,
             userPool: this.userPool
         });
 
         /* Identity Pool */
         this.identityPool = new cognito.CfnIdentityPool(this, 'IdentityPool', {
-            identityPoolName: props.identityPoolName,
+            identityPoolName: `${props.projectName}Identity`,
             allowUnauthenticatedIdentities: true,
             cognitoIdentityProviders: [
                 { clientId: this.userPoolClient.userPoolClientId, providerName: this.userPool.userPoolProviderName },

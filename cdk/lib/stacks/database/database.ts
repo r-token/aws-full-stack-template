@@ -5,8 +5,6 @@ import dynamodb = require('@aws-cdk/aws-dynamodb');
 export interface DatabaseStackProps extends cdk.StackProps {
     projectName: string,
     tableName: string,
-    partitionKeyName: string,
-    sortKeyName: string
 }
 
 export class DatabaseStack extends cdk.Stack {
@@ -21,9 +19,9 @@ export class DatabaseStack extends cdk.Stack {
         //#region
         /* Create DynamoDB Goals Table */
         this.goalsTable = new dynamodb.Table(this, 'TGoals', {
-            tableName: props.tableName,
-            partitionKey: { name: props.partitionKeyName, type: dynamodb.AttributeType.STRING },
-            sortKey: { name: props.sortKeyName, type: dynamodb.AttributeType.STRING },
+            tableName: `${props.projectName}-${props.tableName}`,
+            partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'goalId', type: dynamodb.AttributeType.STRING },
             readCapacity: 1,
             writeCapacity: 1,
             removalPolicy: cdk.RemovalPolicy.DESTROY,

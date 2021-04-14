@@ -8,8 +8,7 @@ var path = require('path');
 
 export interface LambdaStackProps extends cdk.StackProps {
     projectName: string,
-    tableName: string
-
+    tableName: string,
 }
 
 export class LambdaStack extends Stack {
