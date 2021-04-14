@@ -1,31 +1,24 @@
 import * as cdk from '@aws-cdk/core';
-import { RemovalPolicy, CfnOutput, CustomResource } from '@aws-cdk/core';
 import * as dynamodb from '@aws-cdk/aws-dynamodb';
 import s3 = require('@aws-cdk/aws-s3');
 import s3deploy = require('@aws-cdk/aws-s3-deployment');
 import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import cognito = require('@aws-cdk/aws-cognito');
-import { UserPool, UserPoolClientIdentityProvider, CfnIdentityPool } from '@aws-cdk/aws-cognito';
-import { FederatedPrincipal, PolicyDocument, User, Policy, ManagedPolicy, PolicyStatement } from '@aws-cdk/aws-iam';
-import { BlockPublicAccess, BucketPolicy, BucketAccessControl } from '@aws-cdk/aws-s3';
-import codecommit = require('@aws-cdk/aws-codecommit');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipelineactions = require('@aws-cdk/aws-codepipeline-actions');
 import codebuild = require('@aws-cdk/aws-codebuild');
-import { RestApi, LambdaIntegration, IResource, MockIntegration, PassthroughBehavior, CfnAuthorizer, AuthorizationType } from '@aws-cdk/aws-apigateway';
-import { Artifact } from '@aws-cdk/aws-codepipeline';
-import { env } from 'process';
-import { countReset } from 'console';
-import { CloudFrontWebDistribution, OriginAccessIdentity, ViewerProtocolPolicy } from '@aws-cdk/aws-cloudfront'
+import api = require('@aws-cdk/aws-apigateway');
+import cf = require('@aws-cdk/aws-cloudfront');
 
 var path = require('path');
 
 export class MasterFullStackSingleStack extends cdk.Stack {
 
-  private readonly ProjectName: string = 'MyCDKGoals';
-  private readonly TableName: string = 'CDKGoals';
-  private readonly WebsiteIndexDocument: string = 'index.html';
+  private readonly projectName: string = 'MyCdkGoals';
+  private readonly tableName: string = 'CdkGoals';
+  private readonly websiteIndexDocument: string = 'index.html';
+  private readonly cdnWebsiteIndexDocument: string = 'index.html';
 
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -34,12 +27,12 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     //#region
     /* Create DynamoDB Goals Table */
     const goalsTable = new dynamodb.Table(this, 'TGoals', {
-      tableName: `${this.ProjectName}-${this.TableName}`,
+      tableName: `${this.projectName}-${this.tableName}`,
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'goalId', type: dynamodb.AttributeType.STRING },
       readCapacity: 1,
       writeCapacity: 1,
-      removalPolicy: RemovalPolicy.DESTROY,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     /* Create DynamoDB Role/Policy */
@@ -47,7 +40,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
 
-    const goalsPolicy = new Policy(this, 'GoalsPolicy', {
+    const goalsPolicy = new iam.Policy(this, 'GoalsPolicy', {
       policyName: 'GoalsPolicy',
       roles: [dynamoDbRole],
       statements: [
@@ -62,12 +55,11 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     //#endregion
 
     /* S3 Objects */
-    //Todo - grant access to cloudfront user and uncomment block all
     //#region
     /* Assets Source Bucket will be used as a codebuild source for the react code */
     const sourceAssetBucket = new s3.Bucket(this, 'SourceAssetBucket', {
       bucketName: `aws-fullstack-template-source-assets-${getRandomInt(1000000)}`,
-      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       versioned: true
     });
@@ -76,15 +68,15 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     const websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
       bucketName: `aws-fullstack-template-website-${getRandomInt(1000000)}`,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      websiteIndexDocument: this.WebsiteIndexDocument,
-      websiteErrorDocument: this.WebsiteIndexDocument,
+      websiteIndexDocument: this.websiteIndexDocument,
+      websiteErrorDocument: this.websiteIndexDocument,
     });
 
 
     /* Pipleine Artifacts Bucket is used by CodePipeline during Builds */
     const pipelineArtifactsBucket = new s3.Bucket(this, 'PipelineArtifactsBucket', {
       bucketName: `aws-fullstack-template-codepipeline-artifacts-${getRandomInt(1000000)}`,
-      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
@@ -110,18 +102,18 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     /* Cloudfront CDN Distribution */
     //#region 
 
-    const assetsCdn = new CloudFrontWebDistribution(this, 'AssetsCDN', {
-      defaultRootObject: 'index.html',
+    const assetsCdn = new cf.CloudFrontWebDistribution(this, 'AssetsCdn', {
+      defaultRootObject: this.cdnWebsiteIndexDocument,
       comment: `CDN for ${websiteBucket}`,
       originConfigs: [
         {
           s3OriginSource: {
             s3BucketSource: websiteBucket,
-            originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
+            originAccessIdentity: new cf.OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
               comment: `OriginAccessIdentity for ${websiteBucket}`
             }),
           },
-          behaviors: [ { isDefaultBehavior: true } ]
+          behaviors: [{ isDefaultBehavior: true }]
         }
       ]
     });
@@ -131,7 +123,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     /* Lambda Objects */
     //#region
     const functionListGoals = new lambda.Function(this, 'FunctionListGoals', {
-      functionName: `${this.ProjectName}-ListGoals`,
+      functionName: `${this.projectName}-ListGoals`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Get list of goals for userId',
       handler: 'ListGoals.handler',
@@ -142,8 +134,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.dirname('../functions/ListGoals.js')),
     });
 
-        const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
-      functionName: `${this.ProjectName}-CreateGoal`,
+    const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
+      functionName: `${this.projectName}-CreateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Create goal for user id',
       handler: 'CreateGoal.handler',
@@ -155,7 +147,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     const functionDeleteGoal = new lambda.Function(this, 'FunctionDeleteGoal', {
-      functionName: `${this.ProjectName}-DeleteGoal`,
+      functionName: `${this.projectName}-DeleteGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Delete goal for user id',
       handler: 'DeleteGoal.handler',
@@ -167,7 +159,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     const functionUpdateGoal = new lambda.Function(this, 'FunctionUpdateGoal', {
-      functionName: `${this.ProjectName}-UpdateGoal`,
+      functionName: `${this.projectName}-UpdateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Update goal for user id',
       handler: 'UpdateGoal.handler',
@@ -179,7 +171,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     const functionGetGoal = new lambda.Function(this, 'FunctionGetGoal', {
-      functionName: `${this.ProjectName}-GetGoal`,
+      functionName: `${this.projectName}-GetGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Get goal for user id',
       handler: 'GetGoal.handler',
@@ -201,12 +193,12 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     /* Cognito Objects */
     //#region
     /* Cognito SNS Policy */
-    const cognitoSnsRole = new iam.Role(this, 'SNSRole', {
+    const cognitoSnsRole = new iam.Role(this, 'SnsRole', {
       assumedBy: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
     });
 
-    const snsPolicy = new Policy(this, 'CognitoSNSPolicy', {
-      policyName: 'CognitoSNSPolicy',
+    const snsPolicy = new iam.Policy(this, 'CognitoSnsPolicy', {
+      policyName: 'CognitoSnsPolicy',
       roles: [cognitoSnsRole],
       statements: [
         new iam.PolicyStatement({
@@ -218,8 +210,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     /* Cognito User Pool */
-    const userPool = new UserPool(this, 'UserPool', {
-      userPoolName: `${this.ProjectName}-UserPool`,
+    const userPool = new cognito.UserPool(this, 'UserPool', {
+      userPoolName: `${this.projectName}-UserPool`,
       selfSignUpEnabled: true,
       signInAliases: { email: true },
       standardAttributes: {
@@ -246,14 +238,14 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     // /* User Pool Client */
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
-      userPoolClientName: `${this.ProjectName}-UserPoolClient`,
+      userPoolClientName: `${this.projectName}-UserPoolClient`,
       generateSecret: false,
       userPool: userPool
     });
 
     /* Identity Pool */
     const identityPool = new cognito.CfnIdentityPool(this, 'IdentityPool', {
-      identityPoolName: `${this.ProjectName}Identity`,
+      identityPoolName: `${this.projectName}Identity`,
       allowUnauthenticatedIdentities: true,
       cognitoIdentityProviders: [
         { clientId: userPoolClient.userPoolClientId, providerName: userPool.userPoolProviderName },
@@ -273,7 +265,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       )
     });
 
-    const cognitoUnauthorizedPolicy = new Policy(this, 'CognitoUnauthorizedPolicy', {
+    const cognitoUnauthorizedPolicy = new iam.Policy(this, 'CognitoUnauthorizedPolicy', {
       policyName: 'CognitoUnauthorizedPolicy',
       roles: [unauthorizedRole],
       statements: [
@@ -296,7 +288,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       ),
     });
 
-    const authorizedPolicy = new Policy(this, 'CognitoAuthorizedPolicy', {
+    const authorizedPolicy = new iam.Policy(this, 'CognitoAuthorizedPolicy', {
       policyName: 'CognitoAuthorizedPolicy',
       roles: [authorizedRole],
       statements: [
@@ -325,11 +317,11 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Api Gateway */
     //#region
-    const appApi = new RestApi(this, 'AppApi', {
-      restApiName: this.ProjectName,
+    const appApi = new api.RestApi(this, 'AppApi', {
+      restApiName: this.projectName,
     });
 
-    const authorizer = new CfnAuthorizer(this, 'ApiAuthorizer', {
+    const authorizer = new api.CfnAuthorizer(this, 'ApiAuthorizer', {
       restApiId: appApi.restApiId,
       name: 'ApiAuthorizer',
       type: 'COGNITO_USER_POOLS',
@@ -341,43 +333,40 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     appApi.root.addMethod('ANY');
 
     const items = appApi.root.addResource('goals');
-    const getAllIntegration = new LambdaIntegration(functionListGoals);
+    const getAllIntegration = new api.LambdaIntegration(functionListGoals);
     items.addMethod('GET', getAllIntegration, {
-      authorizationType: AuthorizationType.IAM,
+      authorizationType: api.AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
     });
 
-    const createOneIntegration = new LambdaIntegration(functionCreateGoal);
+    const createOneIntegration = new api.LambdaIntegration(functionCreateGoal);
     items.addMethod('POST', createOneIntegration, {
-      authorizationType: AuthorizationType.IAM,
+      authorizationType: api.AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
     });
     addCorsOptions(items);
 
     const singleItem = items.addResource('{id}');
-    const getOneIntegration = new LambdaIntegration(functionGetGoal);
+    const getOneIntegration = new api.LambdaIntegration(functionGetGoal);
     singleItem.addMethod('GET', getOneIntegration, {
-      authorizationType: AuthorizationType.IAM,
+      authorizationType: api.AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
     });
 
-    const updateOneIntegration = new LambdaIntegration(functionUpdateGoal);
+    const updateOneIntegration = new api.LambdaIntegration(functionUpdateGoal);
     singleItem.addMethod('PUT', updateOneIntegration, {
-      authorizationType: AuthorizationType.IAM,
+      authorizationType: api.AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
     });
 
-    const deleteOneIntegration = new LambdaIntegration(functionDeleteGoal);
+    const deleteOneIntegration = new api.LambdaIntegration(functionDeleteGoal);
     singleItem.addMethod('DELETE', deleteOneIntegration, {
-      authorizationType: AuthorizationType.IAM,
+      authorizationType: api.AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
     });
     addCorsOptions(singleItem);
 
     //#endregion
-
-    /* CodeBuild/Pipeline Objects */
-    //#region 
 
     /* CodeBuild Roles/Policies */
     //#region 
@@ -390,8 +379,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: ['s3:*'],
       resources: [
-        sourceAssetBucket.bucketArn, 
-        pipelineArtifactsBucket.bucketArn, 
+        sourceAssetBucket.bucketArn,
+        pipelineArtifactsBucket.bucketArn,
         websiteBucket.bucketArn,
         `${websiteBucket.bucketArn}/*`
       ]
@@ -412,8 +401,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: ['s3:*'],
       resources: [
-        sourceAssetBucket.bucketArn, 
-        pipelineArtifactsBucket.bucketArn, 
+        sourceAssetBucket.bucketArn,
+        pipelineArtifactsBucket.bucketArn,
         websiteBucket.bucketArn,
         `${websiteBucket.bucketArn}/*`
       ]
@@ -424,8 +413,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     /* CodeBuild Pipeline Project */
     //#region 
     const codeBuildProject = new codebuild.PipelineProject(this, 'CodeBuildProject', {
-      projectName: `${this.ProjectName}-build`,
-      description: `CodeBuild Project for ${this.ProjectName}.`,
+      projectName: `${this.projectName}-build`,
+      description: `CodeBuild Project for ${this.projectName}.`,
       environment: {
         computeType: codebuild.ComputeType.SMALL,
         buildImage: codebuild.LinuxBuildImage.STANDARD_3_0,
@@ -443,7 +432,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec.yml'),
       timeout: cdk.Duration.minutes(5),
     });
-    cdk.Tag.add(codeBuildProject, 'app-name', `${this.ProjectName}`);
+    cdk.Tag.add(codeBuildProject, 'app-name', `${this.projectName}`);
 
     codePipelineRole.addToPolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
@@ -455,11 +444,11 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Code Pipeline Object */
     //#region 
-    const sourceOutput = new codepipeline.Artifact(`${this.ProjectName}-SourceArtifact`);
-    const buildOutput = new codepipeline.Artifact(`${this.ProjectName}-BuildArtifact`);
+    const sourceOutput = new codepipeline.Artifact(`${this.projectName}-SourceArtifact`);
+    const buildOutput = new codepipeline.Artifact(`${this.projectName}-BuildArtifact`);
 
     const codePipeline = new codepipeline.Pipeline(this, 'AssetsCodePipeline', {
-      pipelineName: `${this.ProjectName}-Assets-Pipeline`,
+      pipelineName: `${this.projectName}-Assets-Pipeline`,
       role: codePipelineRole,
       artifactBucket: pipelineArtifactsBucket,
       stages: [
@@ -492,7 +481,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Outputs */
     //#region 
-    new CfnOutput(this, 'CloudFrontCDNUrl', { value: `http://${assetsCdn.distributionDomainName}` });
+    new cdk.CfnOutput(this, 'WebsiteBucketUrl', { value: websiteBucket.bucketWebsiteUrl });
+    new cdk.CfnOutput(this, 'CloudFrontCdnUrl', { value: `http://${assetsCdn.distributionDomainName}` });
     //#endregion
 
   }
@@ -500,8 +490,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
 
 
-export function addCorsOptions(apiResource: IResource) {
-  apiResource.addMethod('OPTIONS', new MockIntegration({
+export function addCorsOptions(apiResource: api.IResource) {
+  apiResource.addMethod('OPTIONS', new api.MockIntegration({
     integrationResponses: [{
       statusCode: '200',
       responseParameters: {
@@ -511,7 +501,7 @@ export function addCorsOptions(apiResource: IResource) {
         'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,PUT,POST,DELETE'",
       },
     }],
-    passthroughBehavior: PassthroughBehavior.NEVER,
+    passthroughBehavior: api.PassthroughBehavior.NEVER,
     requestTemplates: {
       "application/json": "{\"statusCode\": 200}"
     },

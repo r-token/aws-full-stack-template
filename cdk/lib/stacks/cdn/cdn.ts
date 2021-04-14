@@ -4,7 +4,8 @@ import cf = require('@aws-cdk/aws-cloudfront')
 import s3 = require('@aws-cdk/aws-s3');
 
 export interface CdnStackProps extends cdk.StackProps {
-    cdnWebsiteIndexDocument: string
+    cdnWebsiteIndexDocument: string,
+    cdnComment: string
 }
 
 export class CdnStack extends cdk.Stack {
@@ -18,7 +19,7 @@ export class CdnStack extends cdk.Stack {
 
         const assetsCdn = new cf.CloudFrontWebDistribution(this, 'AssetsCdn', {
             defaultRootObject: props.cdnWebsiteIndexDocument,
-            comment: `CDN for ${websiteBucket}`,
+            comment: props.cdnComment,
             originConfigs: [
                 {
                     s3OriginSource: {
@@ -35,6 +36,9 @@ export class CdnStack extends cdk.Stack {
         });
 
         //#endregion
+
+        /* Outputs */
+        new cdk.CfnOutput(this, 'CdnUrl', { value: assetsCdn.distributionDomainName });
 
 
 
